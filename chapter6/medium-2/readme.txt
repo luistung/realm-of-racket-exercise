@@ -1,2 +1,2 @@
-Add another type of goo that makes the snake grow two segments longer
-instead of one segment longer.
+Add obstacles to the game. If the snake touches the obstacles, the game
+is over.
