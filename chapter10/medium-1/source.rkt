@@ -60,7 +60,8 @@
 ;; ---------------------------------------------------------------------------------------------------
 ;; Data
 
-(struct dice-world (src board gt) #:transparent)
+(struct dice-world (src gt) #:transparent)
+(define (dice-world-board w) (game-board (dice-world-gt w)))
 ;; DiceWorld = (dice-world (U #false Natural) Board GameTree)
 ;; in (dice-world i b gt)
 ;; -- if i is a Natural, it is an index for the territory that the player has marked for an attack
@@ -202,7 +203,7 @@
 (define (create-world-of-dice-and-doom)
   (define board (territory-build))
   (define gamet (game-tree board INIT-PLAYER))
-  (define new-world (dice-world #f board gamet))
+  (define new-world (dice-world #f gamet))
   (if (no-more-moves-in-world? new-world) (create-world-of-dice-and-doom) new-world))
 
 ;; DiceWorld Key -> DiceWorld
@@ -436,7 +437,8 @@
   (define (owner? tid)
     (if source (not (= tid player)) (= tid player)))
   (define new-board (rotate-until owner? board direction))
-  (dice-world source new-board tree))
+  
+  (dice-world source (game new-board player (game-moves tree))))
 
 ;; [Player -> Boolean] Board (Board -> Board) -> Board
 ;; rotate until the first element of the list satisfies owned-by
@@ -472,7 +474,7 @@
 ;; DiceWorld -> DiceWorld
 ;; unmarks a marked territory
 (define (unmark w)
-  (dice-world #f (dice-world-board w) (dice-world-gt w)))
+  (dice-world #f (dice-world-gt w)))
 
 ;; DiceWorld -> DiceWorld
 ;; marks a territory as the launching pad for an attack or launches the attack
@@ -481,7 +483,7 @@
   (define board (dice-world-board w))
   (define source (dice-world-src w))
   (define focus (territory-index (first board)))
-  (if source (attacking w source focus) (dice-world focus board tree)))
+  (if source (attacking w source focus) (dice-world focus tree)))
 
 (define (attacks board player)
   (for*/list ([src board]
@@ -493,7 +495,7 @@
 ;; DiceWorld Natural Natural -> DiceWorld
 (define (attacking w source target)
   (define nextgt (attacking-gt (dice-world-gt w) source target))
-  (if nextgt (dice-world #f (game-board nextgt) nextgt) w))
+  (if nextgt (dice-world #f nextgt) w))
 
 (define (attacking-gt gt source target)
   (define feasible (game-moves gt))
@@ -681,10 +683,10 @@
      (define nextgt (passes (dice-world-gt w)))
      (cond
        [(or (empty? (game-moves nextgt)) (not (= (game-player nextgt) AI)))
-        (dice-world #f (game-board nextgt) nextgt)]
+        (dice-world #f nextgt)]
        [else
         (define ai (the-ai-plays nextgt AI))
-        (dice-world #f (game-board ai) ai)])]))
+        (dice-world #f ai)])]))
 
 ;; GameTree -> GameTree
 ;; Computer calls this function until it is no longer the player
@@ -772,7 +774,7 @@
 
     (let loop ([i 0])
       (cond
-        [(not (no-more-moves-in-world? (dice-world #f (game-board gt) gt)))
+        [(not (no-more-moves-in-world? (dice-world #f gt)))
          (define player (game-player gt))
          (set! gt (the-ai-plays gt player))
          (loop (add1 i))]
