@@ -1,0 +1,1 @@
+Make the AI step through its moves. Right now, it executes all of its moves at lightning speed, leaving players slightly dazed by the crushing blows that it inflicts.  It will be easier for the player to understand if the AI executes its moves step-by-step instead of all at once.
