@@ -212,22 +212,22 @@
            (image-height mt)))
   (place-image INSTRUCTIONS (* .5 WIDTH) (* .9 HEIGHT) mt))
 
-(define TICK-RATE 1/2)
+(define TICK-RATE 2)
 
 (define-values (set-status test-status draw-status reset-status)
   (let ([cached-draw (void)]
         [cached-test (void)]
         [cached-world (void)])
     (values (lambda (f)
-              (lambda (w ...)
-                (define ret (f w ...))
+              (lambda w
+                (define ret (apply f w))
                 (cond
                   [ret
                    (set! cached-draw (void))
                    (set! cached-test (void))
                    (set! cached-world ret)
                    ret]
-                  [else w])))
+                  [else (first w)])))
             (lambda (f)
               (lambda (w)
                 (cond
@@ -248,6 +248,9 @@
               (set! cached-draw (void))
               (set! cached-test (void))))))
 
+(define (log s)
+  (void)
+  #;(display s))
 ;
 ;
 ;
@@ -271,7 +274,7 @@
 (define (roll-the-dice)
   (big-bang (create-world-of-dice-and-doom)
             (on-key (set-status interact-with-board))
-            #;(on-tick (set-status next-step) TICK-RATE)
+            (on-tick (set-status next-step) TICK-RATE)
             (to-draw (draw-status draw-dice-world))
             (stop-when (test-status no-more-moves-in-world?) draw-end-of-dice-world)))
 
@@ -288,29 +291,33 @@
 ;; DiceWorld Key -> DiceWorld
 ;; Handles key events from a player
 (define (interact-with-board w k)
-  (println "in interact-with-board: begin")
-  (cond
-    [(key=? "left" k) (refocus-board w left)]
-    [(key=? "right" k) (refocus-board w right)]
-    [(key=? "p" k) (pass w)]
-    [(key=? "\r" k) (mark w)]
-    [(key=? "d" k) (unmark w)]
-    [else #f]))
+  (log "in interact-with-board: begin\n")
+  (if resume
+      #f
+      (cond
+        [(key=? "left" k) (refocus-board w left)]
+        [(key=? "right" k) (refocus-board w right)]
+        [(key=? "p" k) (pass w)]
+        [(key=? "\r" k) (mark w)]
+        [(key=? "d" k) (unmark w)]
+        [else #f])))
+
+(define resume #f)
 
 (define (next-step w)
-  (when resume
-    (resume)))
+  (log "in next-step: begin\n")
+  (if resume (resume) w))
 
 ;; Diceworld -> Scene
 ;; draws the world
 (define (draw-dice-world w)
-  (printf "in draw-dice-world: begin\n")
+  (log "in draw-dice-world: begin\n")
   (add-player-info (game-player (dice-world-gt w)) (add-board-to-scene w (ISCENE))))
 
 ;; DiceWorld -> Boolean
 ;; is it possible to play any moves from this world state?
 (define (no-more-moves-in-world? w)
-  (printf "in no-more-moves-in-world?: no-more-moves-in-world?\n")
+  (log "in no-more-moves-in-world?: begin\n")
   (define tree (dice-world-gt w))
   (define board (dice-world-board w))
   (define player (game-player tree))
@@ -734,9 +741,7 @@
   (cond
     [(not m) w]
     [(or (no-more-moves? m) (not (= (game-player m) AI))) (dice-world #f (game-board m) m)]
-    [else
-     (define ai (the-ai-plays m))
-     (dice-world #f (game-board ai) ai)]))
+    [else (the-ai-plays m)]))
 
 ;; GameTree -> GameTree
 ;; Computer calls this function until it is no longer the player
@@ -744,7 +749,10 @@
   (define ratings (rate-moves tree AI-DEPTH))
   (define the-move (first (argmax second ratings)))
   (define new-tree (move-gt the-move))
-  (if (= (game-player new-tree) AI) (the-ai-plays new-tree) new-tree))
+  (cond
+    [(= (game-player new-tree) AI) (set! resume (thunk (the-ai-plays new-tree)))]
+    [else (set! resume #f)])
+  (dice-world #f (game-board new-tree) new-tree))
 
 ;; GameTree Natural -> [List-of (List Move Number)]
 ;; assigns a value to each move that is being considered
@@ -787,7 +795,7 @@
 (define (get-row pos)
   (quotient pos BOARD))
 
-(roll-the-dice)
+#;(roll-the-dice)
 
 ;
 ;
