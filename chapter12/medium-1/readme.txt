@@ -1,0 +1,1 @@
+Create a hint feature. When you press a certain key, a good enemy territory will be highlighted as a suggested attack. Hint: This will require you to use some of the pieces of the AI for the human player.
