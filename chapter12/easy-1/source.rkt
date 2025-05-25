@@ -212,14 +212,22 @@
            (image-height mt)))
   (place-image INSTRUCTIONS (* .5 WIDTH) (* .9 HEIGHT) mt))
 
+(define TICK-RATE 1/2)
+
 (define-values (set-status test-status draw-status reset-status)
   (let ([cached-draw (void)]
-        [cached-test (void)])
+        [cached-test (void)]
+        [cached-world (void)])
     (values (lambda (f)
-              (lambda (w k)
-                (set! cached-draw (void))
-                (set! cached-test (void))
-                (f w k)))
+              (lambda (w ...)
+                (define ret (f w ...))
+                (cond
+                  [ret
+                   (set! cached-draw (void))
+                   (set! cached-test (void))
+                   (set! cached-world ret)
+                   ret]
+                  [else w])))
             (lambda (f)
               (lambda (w)
                 (cond
@@ -263,6 +271,7 @@
 (define (roll-the-dice)
   (big-bang (create-world-of-dice-and-doom)
             (on-key (set-status interact-with-board))
+            #;(on-tick (set-status next-step) TICK-RATE)
             (to-draw (draw-status draw-dice-world))
             (stop-when (test-status no-more-moves-in-world?) draw-end-of-dice-world)))
 
@@ -286,7 +295,11 @@
     [(key=? "p" k) (pass w)]
     [(key=? "\r" k) (mark w)]
     [(key=? "d" k) (unmark w)]
-    [else w]))
+    [else #f]))
+
+(define (next-step w)
+  (when resume
+    (resume)))
 
 ;; Diceworld -> Scene
 ;; draws the world
@@ -774,7 +787,7 @@
 (define (get-row pos)
   (quotient pos BOARD))
 
-#;(roll-the-dice)
+(roll-the-dice)
 
 ;
 ;
@@ -817,11 +830,14 @@
   (check-equal? (d 2) 1)
   (check-equal? (t 1) 1)
   (check-equal? (t 2) 1)
-  (void (c #f #f))
-  (check-equal? (d 2) 2)
+  (void (c 1 1))
+  (check-equal? (d 1) 1)
+  (check-equal? (d 2) 1)
+  (check-equal? (t 1) 1)
+  (check-equal? (t 2) 1)
 
-  (check-equal? (t #f) #f)
-  (check-equal? (t #t) #f))
+  (void (c #f 1))
+  (check-equal? (d 2) 1))
 
 ;; Natural -> Void
 ;; make the board larger
