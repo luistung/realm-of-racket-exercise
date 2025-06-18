@@ -93,18 +93,30 @@
   (nine-state (nine-board-init) 0)
   #;(nine-state (nine-board (vector 0 -1 0 1 1 0 1 0 1)) 0))
 
-(define state (init-state))
+(define (random-choose l)
+  (define len (length l))
+  (list-ref l (random len)))
 
-(for/list ([i 1])
-  (random-seed 3)
-  (let loop ([state state]
-             [step 0])
-    (cond
-      [(or (terminal? state) (>= step 100))
-       #;(nine-board-print (nine-state-board state))
-       step]
-      [else
-       (define action (mcts-search state #:simulate-num 10 #:per-simulate-num 100 #:gamma 0.9))
-       (nine-board-print (nine-state-board state))
-       (displayln "")
-       (loop (take-action state action) (add1 step))])))
+(module+ test
+  (require rackunit)
+  (define win-count
+    (count identity
+           (for/list ([i 100])
+             (random-seed i)
+             (define state (init-state))
+             (define first-player (random 2))
+
+             (equal?
+              first-player
+              (let loop ([state state]
+                         [step 0])
+                (define terminal-player (terminal? state))
+                (cond
+                  [(or terminal-player) (if (= terminal-player -1) 'tie terminal-player)]
+                  [else
+                   (define action
+                     (if (= (modulo step 2) first-player)
+                         (mcts-search state #:simulate-num 10 #:per-simulate-num 100 #:gamma 0.9)
+                         (random-choose (possible-action state))))
+                   (loop (take-action state action) (add1 step))]))))))
+  (check-equal? win-count 90))
