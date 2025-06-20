@@ -163,7 +163,7 @@
 (define BOARD 4)
 (define GRID (* BOARD BOARD))
 (define INIT-PLAYER 0)
-(define INIT-SPARE-DICE 10)
+(define INIT-SPARE-DICE 0)
 ; The depth at which to limit the gametree
 (define AI-DEPTH 4)
 (define AI 1)
@@ -790,21 +790,26 @@
    (define (process-reward mcts-state action)
      (define new-state (take-action mcts-state action))
      (cond
-       [(terminal? new-state) 0.0]
-       [else
+       [(terminal? new-state)
         (define-values (best w) (winners (game-board (tree-state-tree mcts-state))))
-        (if (member player w) (/ 1 (length w) 1.0) -1.0)]))
+        (if (member player w) (/ 1 (length w) 1.0) -1.0)]
+       [(empty? (move-action action)) 0.0]
+       [else 0.2]))
    (define (policy-score mcts-state action)
-     1.0)])
+     (define dice-action (move-action action))
+     (cond
+       [(empty? dice-action) 0.1]
+       [else
+        (define dst (second dice-action))
+        (define board (game-board (tree-state-tree mcts-state)))
+        (territory-dice (findf (lambda (x) (= (territory-index x) dst)) board))]))])
 
 ;; GameTree -> GameTree
 ;; Computer calls this function until it is no longer the player
 
 (define (the-ai-plays tree)
-  #;(define ratings (rate-moves tree AI-DEPTH AI))
-  #;(define the-move (first (argmax second ratings)))
   (define state (tree-state tree))
-  (define the-move (mcts-search state #:simulate-num 10 #:per-simulate-num 100 #:gamma 0.9))
+  (define the-move (mcts-search state #:simulate-num 100 #:per-simulate-num 10 #:gamma 0.9))
   (define new-tree (move-gt the-move))
   (cond
     [(= (game-player new-tree) AI) (set! resume (thunk (the-ai-plays new-tree)))]
