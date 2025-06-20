@@ -119,4 +119,5 @@
                          (mcts-search state #:simulate-num 10 #:per-simulate-num 100 #:gamma 0.9)
                          (random-choose (possible-action state))))
                    (loop (take-action state action) (add1 step))]))))))
-  (check-equal? win-count 90))
+  (check-equal? win-count 90)
+  "nine tested")
