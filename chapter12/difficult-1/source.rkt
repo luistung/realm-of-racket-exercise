@@ -291,7 +291,12 @@
   (define board (territory-build))
   (define gamet (game-tree board INIT-PLAYER INIT-SPARE-DICE))
   (define new-world (dice-world #f board gamet))
-  (if (no-more-moves-in-world? new-world) (create-world-of-dice-and-doom) new-world))
+  (cond
+    [(no-more-moves-in-world? new-world) (create-world-of-dice-and-doom)]
+    [else
+     (when (equal? (game-player (dice-world-gt new-world)) AI)
+       (set! resume (thunk (the-ai-plays (dice-world-gt new-world)))))
+     new-world]))
 
 ;; DiceWorld Key -> DiceWorld
 ;; Handles key events from a player
@@ -797,12 +802,12 @@
        [else 0.2]))
    (define (policy-score mcts-state action)
      (define dice-action (move-action action))
-     (cond
-       [(empty? dice-action) 0.1]
-       [else
-        (define dst (second dice-action))
-        (define board (game-board (tree-state-tree mcts-state)))
-        (territory-dice (findf (lambda (x) (= (territory-index x) dst)) board))]))])
+     (exp (cond
+            [(empty? dice-action) 0.0]
+            [else
+             (define dst (second dice-action))
+             (define board (game-board (tree-state-tree mcts-state)))
+             (territory-dice (findf (lambda (x) (= (territory-index x) dst)) board))])))])
 
 ;; GameTree -> GameTree
 ;; Computer calls this function until it is no longer the player
@@ -857,7 +862,7 @@
 (define (get-row pos)
   (quotient pos BOARD))
 
-(roll-the-dice)
+#;(roll-the-dice)
 
 ;
 ;
