@@ -1,0 +1,1 @@
+Design a version of the distributed Guess My Number game in which two human players face off. The first player who connects to the server should set the number to be guessed, and the second player to connect must guess that number.
