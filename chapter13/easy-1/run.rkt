@@ -47,11 +47,6 @@
 
 ;; play the game as "Adam" 
 (define (run)
-  (launch-many-worlds (launch-guess-client "Adam" LOCALHOST)
-                      (launch-guess-server)))
-
-;; what happens if two players sign up with the server simultaneously 
-(define (bad)
-  (launch-many-worlds (launch-guess-client "Adam" LOCALHOST) 
+  (launch-many-worlds (launch-guess-client1 "Adam" LOCALHOST)
                       (launch-guess-server)
-                      (launch-guess-client "Beatrice" LOCALHOST)))
+                      (launch-guess-client2 "Beatrice" LOCALHOST)))
