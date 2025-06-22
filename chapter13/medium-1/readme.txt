@@ -1,0 +1,1 @@
+Try writing a simple chat client and server. When you finish, you can use it to talk to your friends in class, instead of paying attention to the professor. See How to Design Programs, Second Edition (www.ccs.neu.edu/home/matthias/HtDP2e/) for hints.
