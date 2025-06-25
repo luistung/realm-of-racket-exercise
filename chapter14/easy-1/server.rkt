@@ -2,55 +2,56 @@
 
 ;; This module implements the server for the Hungry Henry game
 
-(provide 
- bon-appetit ;; -> Void 
- ;; launch the server for Hungry Henry 
- )
+(provide bon-appetit ;; -> Void
+         ;; launch the server for Hungry Henry
+         )
 
-(require "shared.rkt" 2htdp/universe) 
+(require "shared.rkt"
+         2htdp/universe)
 
 #| -----------------------------------------------------------------------------
-The server is responsible for: 
--- starting the game 
--- moving Henrys 
--- have Henrys eat, remove food on collision 
+The server is responsible for:
+-- starting the game
+-- moving Henrys
+-- have Henrys eat, remove food on collision
 -- collecting and broadcasting information about the movement of players
 -- ending games
 |#
 
-;                                                                                      
-;                                                                                      
-;                                                                                      
-;   ;   ;                                            ;   ;                             
-;   ;   ;                                            ;   ;                             
-;   ;   ;  ;   ;  ; ;;    ;; ;  ; ;;;  ;   ;         ;   ;   ;;;   ; ;;   ; ;;;  ;   ; 
-;   ;   ;  ;   ;  ;;  ;  ;  ;;  ;;  ;  ;   ;         ;   ;  ;   ;  ;;  ;  ;;  ;  ;   ; 
-;   ;;;;;  ;   ;  ;   ;  ;   ;  ;       ;  ;         ;;;;;  ;   ;  ;   ;  ;       ;  ; 
-;   ;   ;  ;   ;  ;   ;  ;   ;  ;       ; ;          ;   ;  ;;;;;  ;   ;  ;       ; ;  
-;   ;   ;  ;   ;  ;   ;  ;   ;  ;       ; ;          ;   ;  ;      ;   ;  ;       ; ;  
-;   ;   ;  ;  ;;  ;   ;  ;  ;;  ;        ;           ;   ;  ;      ;   ;  ;        ;   
-;   ;   ;   ;; ;  ;   ;   ;; ;  ;        ;           ;   ;   ;;;;  ;   ;  ;        ;   
-;                            ;           ;                                         ;   
-;                         ;;;          ;;                                        ;;    
-;                                                                                      
-
+;
+;
+;
+;   ;   ;                                            ;   ;
+;   ;   ;                                            ;   ;
+;   ;   ;  ;   ;  ; ;;    ;; ;  ; ;;;  ;   ;         ;   ;   ;;;   ; ;;   ; ;;;  ;   ;
+;   ;   ;  ;   ;  ;;  ;  ;  ;;  ;;  ;  ;   ;         ;   ;  ;   ;  ;;  ;  ;;  ;  ;   ;
+;   ;;;;;  ;   ;  ;   ;  ;   ;  ;       ;  ;         ;;;;;  ;   ;  ;   ;  ;       ;  ;
+;   ;   ;  ;   ;  ;   ;  ;   ;  ;       ; ;          ;   ;  ;;;;;  ;   ;  ;       ; ;
+;   ;   ;  ;   ;  ;   ;  ;   ;  ;       ; ;          ;   ;  ;      ;   ;  ;       ; ;
+;   ;   ;  ;  ;;  ;   ;  ;  ;;  ;        ;           ;   ;  ;      ;   ;  ;        ;
+;   ;   ;   ;; ;  ;   ;   ;; ;  ;        ;           ;   ;   ;;;;  ;   ;  ;        ;
+;                            ;           ;                                         ;
+;                         ;;;          ;;                                        ;;
+;
 
 ;; Init Constants
 (define TICK .1)
 (define PLAYER-LIMIT 2)
 (define START-TIME 0)
 (define WAIT-TIME 250)
+(define ADD-FOOD# 1)
+(define food-remaider 0)
 
 (define FOOD*PLAYERS 5)
 
 (define WEIGHT-FACTOR 2.1)
 (define BASE-SPEED (/ (expt PLAYER-SIZE 2) WEIGHT-FACTOR))
 
-;; Data Definitions 
+;; Data Definitions
 (struct join (clients [time #:mutable]) #:transparent)
 (struct play (players food spectators) #:transparent #:mutable)
 
-;; plus some update primitives: 
+;; plus some update primitives:
 
 ;; JoinUniverse Player -> JoinUniverse
 (define (join-add-player j new-p)
@@ -69,71 +70,69 @@ The server is responsible for:
   (define spectators (play-spectators p))
   (play (rip iw players) (play-food p) (rip iw spectators)))
 
-;; JoinUniverse IWorld -> JoinUniverse 
-;; removes players and spectators that use iw from this world 
+;; JoinUniverse IWorld -> JoinUniverse
+;; removes players and spectators that use iw from this world
 (define (join-remove j iw)
   (join (rip iw (join-clients j)) (join-time j)))
 
 ;; IWorld [Listof Player] -> [Listof Player]
-;; remove player that contains the given IWorld 
+;; remove player that contains the given IWorld
 (define (rip iw players)
   (remove iw players (lambda (iw p) (iworld=? iw (ip-iw p)))))
 
-;; LIKE: 
+;; LIKE:
 ;; (struct ip ip? ip-id ip-iw ip-body ip-waypoints ip-player)
-(define-values 
-  (ip ip? ip-id ip-iw ip-body ip-waypoints ip-player)
+(define-values (ip ip? ip-id ip-iw ip-body ip-waypoints ip-player)
   (let ()
     (struct ip (id iw body waypoints player) #:transparent)
     (define (create iw id body waypoints)
       (ip id iw body waypoints (player id body waypoints)))
-    (values 
-     create ip? ip-id ip-iw ip-body ip-waypoints ip-player)))
+    (values create ip? ip-id ip-iw ip-body ip-waypoints ip-player)))
 
 ;; ServerState is one of
 ;; -- JoinUniverse
 ;; -- PlayUniverse
 ;; JoinUniververse = (join [Listof IPs] Nat)
-;; interpretation: 
+;; interpretation:
 ;; -- the first field lists the currently connected client-player
 ;; -- the second field is the number of ticks since the server started
 ;; PlayUniverse    = (play [Listof IPs] [Listof Food] [Listof IP])
-;; interpretation: 
+;; interpretation:
 ;; -- the first field lists all participating players
-;; -- the second field lists the cupcakes 
-;; --- the third field enumerates the spectating players 
+;; -- the second field lists the cupcakes
+;; --- the third field enumerates the spectating players
 ;; IP              = (ip Id IWorld Body [Listof Complex] Feaster)
-;; interpretation: 
-;; the struct represents the Universe's perspective of a connected player 
-;; -- the first field is the assigned unique Id 
-;; -- the second field is the IWorld representing the remote connection to the client 
-;; -- the third field is the Body of the player 
-;; -- the fourth field is the list of player-chosen Waypoints, 
+;; interpretation:
+;; the struct represents the Universe's perspective of a connected player
+;; -- the first field is the assigned unique Id
+;; -- the second field is the IWorld representing the remote connection to the client
+;; -- the third field is the Body of the player
+;; -- the fourth field is the list of player-chosen Waypoints,
 ;;     ordered from oldest click to most-recent
-;;     meaning the first one has to be visited first by the Henry 
-;; -- the fifth field is the serialized representation of the first four fields 
+;;     meaning the first one has to be visited first by the Henry
+;; -- the fifth field is the serialized representation of the first four fields
 
 (define JOIN0 (join empty START-TIME))
 
-;                                  
-;                                  
-;                                  
-;                                  
-;   ;;; ;;;            ;           
-;    ;; ;;                         
-;    ;; ;;   ;;;;    ;;;    ;; ;;  
-;    ; ; ;  ;    ;     ;     ;;  ; 
-;    ; ; ;   ;;;;;     ;     ;   ; 
-;    ;   ;  ;    ;     ;     ;   ; 
-;    ;   ;  ;   ;;     ;     ;   ; 
+;
+;
+;
+;
+;   ;;; ;;;            ;
+;    ;; ;;
+;    ;; ;;   ;;;;    ;;;    ;; ;;
+;    ; ; ;  ;    ;     ;     ;;  ;
+;    ; ; ;   ;;;;;     ;     ;   ;
+;    ;   ;  ;    ;     ;     ;   ;
+;    ;   ;  ;   ;;     ;     ;   ;
 ;   ;;; ;;;  ;;; ;;  ;;;;;  ;;; ;;;
-;                                  
-;                                  
-;                                  
-;                                  
+;
+;
+;
+;
 
-(define (bon-appetit) 
-  (universe JOIN0 
+(define (bon-appetit)
+  (universe JOIN0
             (on-new connect)
             (on-msg handle-goto-message)
             (on-tick tick-tock TICK)
@@ -142,54 +141,58 @@ The server is responsible for:
 ;; ServerState IWorld -> Bundle
 ;; adds a new connection to a JoinUniverse and ticks. Ignores otherwise
 (define (connect s iw)
-  (cond [(join? s) (add-player s iw)]
-        [(play? s)   (add-spectator s iw)]))
+  (cond
+    [(join? s) (add-player s iw)]
+    [(play? s) (add-spectator s iw)]))
 
 ;; ServerState IWorld Sexpr -> Bundle
 ;; accepts goto messages from clients
 (define (handle-goto-message s iw msg)
-  (cond [(and (play? s) (goto? msg)) (goto s iw msg)]
-        [else                        (empty-bundle s)]))
+  (cond
+    [(and (play? s) (goto? msg)) (goto s iw msg)]
+    [else (empty-bundle s)]))
 
 ;; ServerState -> Bundle
 ;; handle a tick event
 (define (tick-tock s)
-  (cond [(join? s) (wait-or-play s)]
-        [(play? s) (move-and-eat s)]))
+  (cond
+    [(join? s) (wait-or-play s)]
+    [(play? s) (move-and-eat s)]))
 
 ;; ServerState IWorld -> Bundle
 ;; handles loss of a client
 (define (disconnect s iw)
-  (cond [(join? s) (drop-client s iw)]
-        [(play? s) (drop-player s iw)]))
+  (cond
+    [(join? s) (drop-client s iw)]
+    [(play? s) (drop-player s iw)]))
 
-;                                                   
-;                                                   
-;                                                   
-;  ;     ;          ;             ;                 
-;  ;     ;                ;                         
-;  ;     ; ;;;;   ;;;    ;;;;;  ;;;    ; ;;    ;; ; 
-;  ;  ;  ;     ;    ;     ;       ;    ;;  ;  ;  ;; 
-;  ;  ;  ;     ;    ;     ;       ;    ;   ;  ;   ; 
-;   ;; ;;   ;;;;    ;     ;       ;    ;   ;  ;   ; 
-;   ;; ;;  ;   ;    ;     ;       ;    ;   ;  ;   ; 
-;   ;   ;  ;  ;;    ;     ;       ;    ;   ;  ;  ;; 
-;   ;   ;   ;;  ;   ;      ;;;    ;    ;   ;   ;; ; 
-;                                                 ; 
-;                                              ;;;  
-;                                                   
+;
+;
+;
+;  ;     ;          ;             ;
+;  ;     ;                ;
+;  ;     ; ;;;;   ;;;    ;;;;;  ;;;    ; ;;    ;; ;
+;  ;  ;  ;     ;    ;     ;       ;    ;;  ;  ;  ;;
+;  ;  ;  ;     ;    ;     ;       ;    ;   ;  ;   ;
+;   ;; ;;   ;;;;    ;     ;       ;    ;   ;  ;   ;
+;   ;; ;;  ;   ;    ;     ;       ;    ;   ;  ;   ;
+;   ;   ;  ;  ;;    ;     ;       ;    ;   ;  ;  ;;
+;   ;   ;   ;;  ;   ;      ;;;    ;    ;   ;   ;; ;
+;                                                 ;
+;                                              ;;;
+;
 
 ;; JoinUniverse -> Bundle
 ;; count down and might transition
 (define (wait-or-play j)
-  (cond [(keep-waiting? j) (keep-waiting j)]
-        [else              (start-game j)]))
+  (cond
+    [(keep-waiting? j) (keep-waiting j)]
+    [else (start-game j)]))
 
 ;; JoinUniverse -> Boolean
 ;; is it time to start?
 (define (keep-waiting? j)
-  (or (> PLAYER-LIMIT (length (join-clients j)))
-      (> WAIT-TIME (join-time j))))
+  (or (> PLAYER-LIMIT (length (join-clients j))) (> WAIT-TIME (join-time j))))
 
 ;; JoinUniverse -> [Bundle JoinUniverse]
 (define (keep-waiting j)
@@ -200,13 +203,13 @@ The server is responsible for:
 ;; broadcasts the new load time fraction to the players
 (define (time-broadcast j)
   (define iworlds (map ip-iw (join-clients j)))
-  (define load%   (min 1 (/ (join-time j) WAIT-TIME)))
+  (define load% (min 1 (/ (join-time j) WAIT-TIME)))
   (make-bundle j (broadcast iworlds load%) empty))
 
 ;; JoinUniverse -> [Bundle PlayUniverse]
 ;; starts the game
 (define (start-game j)
-  (define clients  (join-clients j))
+  (define clients (join-clients j))
   (define cupcakes (bake-cupcakes (length clients)))
   (broadcast-universe (play clients cupcakes empty)))
 
@@ -216,26 +219,26 @@ The server is responsible for:
   (for/list ([i (in-range (* player# FOOD*PLAYERS))])
     (create-a-body CUPCAKE)))
 
-;                                                   
-;                                                   
-;          ;;;                                      
-;   ;;;;     ;                    ;                 
-;   ;   ;    ;                                      
-;   ;   ;    ;    ;;;;   ;   ;  ;;;    ; ;;    ;; ; 
-;   ;  ;     ;        ;  ;   ;    ;    ;;  ;  ;  ;; 
-;   ;;;      ;        ;   ;  ;    ;    ;   ;  ;   ; 
-;   ;        ;     ;;;;   ; ;     ;    ;   ;  ;   ; 
-;   ;        ;    ;   ;   ; ;     ;    ;   ;  ;   ; 
-;   ;        ;    ;  ;;    ;      ;    ;   ;  ;  ;; 
-;   ;        ;     ;;  ;   ;      ;    ;   ;   ;; ; 
-;                          ;                      ; 
-;                        ;;                    ;;;  
-;                                                   
+;
+;
+;          ;;;
+;   ;;;;     ;                    ;
+;   ;   ;    ;
+;   ;   ;    ;    ;;;;   ;   ;  ;;;    ; ;;    ;; ;
+;   ;  ;     ;        ;  ;   ;    ;    ;;  ;  ;  ;;
+;   ;;;      ;        ;   ;  ;    ;    ;   ;  ;   ;
+;   ;        ;     ;;;;   ; ;     ;    ;   ;  ;   ;
+;   ;        ;    ;   ;   ; ;     ;    ;   ;  ;   ;
+;   ;        ;    ;  ;;    ;      ;    ;   ;  ;  ;;
+;   ;        ;     ;;  ;   ;      ;    ;   ;   ;; ;
+;                          ;                      ;
+;                        ;;                    ;;;
+;
 
 ;; PlayUniverse -> Bundle
 ;; moves everything. eats. may end game
 (define (move-and-eat pu)
-  (define nplayers  (move-player* (play-players pu)))
+  (define nplayers (move-player* (play-players pu)))
   (define nfood (feed-em-all nplayers (play-food pu)))
   (progress nplayers nfood (play-spectators pu)))
 
@@ -244,24 +247,25 @@ The server is responsible for:
 (define (move-player* players)
   (for/list ([p players])
     (define waypoints (ip-waypoints p))
-    (cond [(empty? waypoints) p]
-          [else (define body  (ip-body p))
-                (define nwpts 
-                  (move-toward-waypoint body waypoints))
-                (ip (ip-iw p) (ip-id p) body nwpts)])))
+    (cond
+      [(empty? waypoints) p]
+      [else
+       (define body (ip-body p))
+       (define nwpts (move-toward-waypoint body waypoints))
+       (ip (ip-iw p) (ip-id p) body nwpts)])))
 
 ;; Body [Listof Complex] -> [Listof Complex]
-;; effect: set body's location 
-;; determine new waypoints for player 
+;; effect: set body's location
+;; determine new waypoints for player
 ;; pre: (cons? waypoints)
 (define (move-toward-waypoint body waypoints)
-  (define goal  (first waypoints))
-  (define bloc  (body-loc body))
-  (define line  (- goal bloc))
-  (define dist  (magnitude line))
+  (define goal (first waypoints))
+  (define bloc (body-loc body))
+  (define line (- goal bloc))
+  (define dist (magnitude line))
   (define speed (/ BASE-SPEED (body-size body)))
   (cond
-    [(<= dist speed) 
+    [(<= dist speed)
      (set-body-loc! body goal)
      (rest waypoints)]
     [else ; (> distance speed 0)
@@ -271,12 +275,19 @@ The server is responsible for:
 ;; [Listof Player] [Listof Food] -> [Listof Food]
 ;; feeds all players and removes food
 (define (feed-em-all players foods)
-  (for/fold ([foods foods]) ([p players])
-    (eat-all-the-things p foods)))
+  (define origin-food# (length foods))
+  (define new-foods
+    (for/fold ([foods foods]) ([p players])
+      (eat-all-the-things p foods)))
+  (define-values (quotient remainder)
+    (quotient/remainder (+ food-remaider (- origin-food# (length new-foods))) 2))
+  (set! food-remaider remainder)
+  (for/fold ([new-foods new-foods]) ([i (* quotient ADD-FOOD#)])
+    (cons (create-a-body CUPCAKE) new-foods)))
 
 ;; IP [Listof Food] -> [Listof Food]
-;; effect: fatten player as he eats 
-;; determine left-over foods 
+;; effect: fatten player as he eats
+;; determine left-over foods
 (define (eat-all-the-things player foods)
   (define b (ip-body player))
   (for/fold ([foods '()]) ([f foods])
@@ -289,22 +300,22 @@ The server is responsible for:
 ;; body body -> Boolean
 ;; Have two bodys collided?
 (define (body-collide? s1 s2)
-  (<= (magnitude (- (body-loc s1) (body-loc s2)))
-      (+ (body-size s1) (body-size s2))))
+  (<= (magnitude (- (body-loc s1) (body-loc s2))) (+ (body-size s1) (body-size s2))))
 
 ;; [Listof Ip] [Listof Food] [Listof IP] -> Bundle
 ;; moves all objects. may end game
 (define (progress pls foods spectators)
   (define p (play pls foods spectators))
-  (cond [(empty? foods) (end-game-broadcast p)]
-        [else (broadcast-universe p)]))
+  (cond
+    [(empty? foods) (end-game-broadcast p)]
+    [else (broadcast-universe p)]))
 
 ;; PlayUniverse -> [Bundle JoinUniverse]
 ;; ends the game, and restarts it
 (define (end-game-broadcast p)
   (define iws (get-iws p))
   (define msg (list SCORE (score (play-players p))))
-  (define mls (broadcast iws msg)) 
+  (define mls (broadcast iws msg))
   (make-bundle (remake-join p) mls empty))
 
 ;; Play-Universe -> JoinUniverse
@@ -326,22 +337,22 @@ The server is responsible for:
   (for/list ([p ps])
     (list (ip-id p) (get-score (body-size (ip-body p))))))
 
-;                                                                  
-;                                                                  
-;                                                                  
-;                                                                  
-;   ;;; ;;;                                                        
-;    ;; ;;                                                         
-;    ;; ;;   ;;;;    ;;;;;   ;;;;;   ;;;;    ;;; ;;  ;;;;    ;;;;; 
-;    ; ; ;  ;    ;  ;    ;  ;    ;  ;    ;  ;   ;;  ;    ;  ;    ; 
-;    ; ; ;  ;;;;;;   ;;;;    ;;;;    ;;;;;  ;    ;  ;;;;;;   ;;;;  
-;    ;   ;  ;            ;       ;  ;    ;  ;    ;  ;            ; 
-;    ;   ;  ;       ;    ;  ;    ;  ;   ;;  ;   ;;  ;       ;    ; 
-;   ;;; ;;;  ;;;;;  ;;;;;   ;;;;;    ;;; ;;  ;;; ;   ;;;;;  ;;;;;  
-;                                                ;                 
-;                                            ;;;;                  
-;                                                                  
-;                                                                  
+;
+;
+;
+;
+;   ;;; ;;;
+;    ;; ;;
+;    ;; ;;   ;;;;    ;;;;;   ;;;;;   ;;;;    ;;; ;;  ;;;;    ;;;;;
+;    ; ; ;  ;    ;  ;    ;  ;    ;  ;    ;  ;   ;;  ;    ;  ;    ;
+;    ; ; ;  ;;;;;;   ;;;;    ;;;;    ;;;;;  ;    ;  ;;;;;;   ;;;;
+;    ;   ;  ;            ;       ;  ;    ;  ;    ;  ;            ;
+;    ;   ;  ;       ;    ;  ;    ;  ;   ;;  ;   ;;  ;       ;    ;
+;   ;;; ;;;  ;;;;;  ;;;;;   ;;;;;    ;;; ;;  ;;; ;   ;;;;;  ;;;;;
+;                                                ;
+;                                            ;;;;
+;
+;
 
 ;; -----------------------------------------------------------------------------
 ;; Play Universe
@@ -370,70 +381,67 @@ The server is responsible for:
 ;; adds that complex to the waypoints of the given players
 (define (add-waypoint ps c iw)
   (for/list ([p ps])
-    (cond [(iworld=? (ip-iw p) iw)
-           (ip (ip-iw p)
-               (ip-id p) 
-               (ip-body p) 
-               (append (ip-waypoints p) (list c)))]
-          [else p])))
+    (cond
+      [(iworld=? (ip-iw p) iw)
+       (ip (ip-iw p) (ip-id p) (ip-body p) (append (ip-waypoints p) (list c)))]
+      [else p])))
 
-;                                                                                  
-;                                                                                  
-;                                                                                  
-;                                                                                  
-;     ;;;;                                                     ;                   
-;    ;   ;                                           ;                             
-;   ;        ;;;;   ;; ;;   ;; ;;    ;;;;    ;;; ;  ;;;;;    ;;;     ;;;;   ;; ;;  
-;   ;       ;    ;   ;;  ;   ;;  ;  ;    ;  ;   ;;   ;         ;    ;    ;   ;;  ; 
-;   ;       ;    ;   ;   ;   ;   ;  ;;;;;;  ;        ;         ;    ;    ;   ;   ; 
-;   ;       ;    ;   ;   ;   ;   ;  ;       ;        ;         ;    ;    ;   ;   ; 
-;    ;   ;  ;    ;   ;   ;   ;   ;  ;       ;    ;   ;   ;     ;    ;    ;   ;   ; 
+;
+;
+;
+;
+;     ;;;;                                                     ;
+;    ;   ;                                           ;
+;   ;        ;;;;   ;; ;;   ;; ;;    ;;;;    ;;; ;  ;;;;;    ;;;     ;;;;   ;; ;;
+;   ;       ;    ;   ;;  ;   ;;  ;  ;    ;  ;   ;;   ;         ;    ;    ;   ;;  ;
+;   ;       ;    ;   ;   ;   ;   ;  ;;;;;;  ;        ;         ;    ;    ;   ;   ;
+;   ;       ;    ;   ;   ;   ;   ;  ;       ;        ;         ;    ;    ;   ;   ;
+;    ;   ;  ;    ;   ;   ;   ;   ;  ;       ;    ;   ;   ;     ;    ;    ;   ;   ;
 ;     ;;;    ;;;;   ;;; ;;; ;;; ;;;  ;;;;;   ;;;;     ;;;    ;;;;;   ;;;;   ;;; ;;;
-;                                                                                  
-;                                                                                  
-;                                                                                  
-;                                                                                  
-
+;
+;
+;
+;
 
 ;; -----------------------------------------------------------------------------
 ;; Join Universe
 
 ;; [Universe Player -> Universe] -> [Universe IWorld -> [Bundle Universe]]
-;; creates a function that deals with a new connection during join or play phase 
+;; creates a function that deals with a new connection during join or play phase
 (define (make-connection adder)
   (lambda (u iw)
     (define player (named-player iw))
-    (define mails  (list (make-mail iw (ip-id player))))
+    (define mails (list (make-mail iw (ip-id player))))
     (make-bundle (adder u player) mails empty)))
 
 ;; JoinUniverse IWorld ID -> [Bundle JoinUniverse]
-;; creates an internal player for the IWorld, adds it to Universe as waiting player 
+;; creates an internal player for the IWorld, adds it to Universe as waiting player
 (define add-player (make-connection join-add-player))
 
 ;; PlayUniverse IWorld -> [Bundle PlayUniverse]
-;; creates an internal player for the IWorld, adds it to Universe as spectator 
+;; creates an internal player for the IWorld, adds it to Universe as spectator
 (define add-spectator (make-connection play-add-spectator))
 
-;; [Listof IP] IWorld ->* Player 
+;; [Listof IP] IWorld ->* Player
 (define (named-player iw)
   (create-player iw (symbol->string (gensym (iworld-name iw)))))
 
-;                                                                          
-;                                                                          
-;                                                                          
-;                                                                          
-;    ;;; ;                     ;              ;;       ;                   
-;   ;   ;;                                     ;                           
-;   ;        ;;;;   ;; ;;;   ;;;     ;;;;      ;     ;;;     ;;;;;   ;;;;  
-;    ;;;;   ;    ;   ;;        ;    ;    ;     ;       ;     ;  ;   ;    ; 
-;        ;  ;;;;;;   ;         ;     ;;;;;     ;       ;       ;    ;;;;;; 
-;        ;  ;        ;         ;    ;    ;     ;       ;      ;     ;      
-;   ;;   ;  ;        ;         ;    ;   ;;     ;       ;     ;   ;  ;      
-;   ; ;;;    ;;;;;  ;;;;;    ;;;;;   ;;; ;;  ;;;;;   ;;;;;   ;;;;;   ;;;;; 
-;                                                                          
-;                                                                          
-;                                                                          
-;                                                                          
+;
+;
+;
+;
+;    ;;; ;                     ;              ;;       ;
+;   ;   ;;                                     ;
+;   ;        ;;;;   ;; ;;;   ;;;     ;;;;      ;     ;;;     ;;;;;   ;;;;
+;    ;;;;   ;    ;   ;;        ;    ;    ;     ;       ;     ;  ;   ;    ;
+;        ;  ;;;;;;   ;         ;     ;;;;;     ;       ;       ;    ;;;;;;
+;        ;  ;        ;         ;    ;    ;     ;       ;      ;     ;
+;   ;;   ;  ;        ;         ;    ;   ;;     ;       ;     ;   ;  ;
+;   ; ;;;    ;;;;;  ;;;;;    ;;;;;   ;;; ;;  ;;;;;   ;;;;;   ;;;;;   ;;;;;
+;
+;
+;
+;
 
 ;; PlayUniverse -> [Bundle PlayUniverse [Listof [Mail StateMessage]]]
 ;; bundle this universe, serialize it, broadcast it, and drop noone
@@ -452,22 +460,22 @@ The server is responsible for:
   (define serialized-players (map ip-player (play-players p)))
   (list SERIALIZE serialized-players (play-food p)))
 
-;                                                                                  
-;                                                                                  
-;                                                                                  
-;                                                                                  
-;   ;;;;       ;                                                                   
-;    ;  ;                                                                    ;     
-;    ;   ;   ;;;     ;;;;;   ;;; ;   ;;;;   ;; ;;   ;; ;;    ;;;;    ;;; ;  ;;;;;  
-;    ;   ;     ;    ;    ;  ;   ;;  ;    ;   ;;  ;   ;;  ;  ;    ;  ;   ;;   ;     
-;    ;   ;     ;     ;;;;   ;       ;    ;   ;   ;   ;   ;  ;;;;;;  ;        ;     
-;    ;   ;     ;         ;  ;       ;    ;   ;   ;   ;   ;  ;       ;        ;     
-;    ;  ;      ;    ;    ;  ;    ;  ;    ;   ;   ;   ;   ;  ;       ;    ;   ;   ; 
-;   ;;;;     ;;;;;  ;;;;;    ;;;;    ;;;;   ;;; ;;; ;;; ;;;  ;;;;;   ;;;;     ;;;  
-;                                                                                  
-;                                                                                  
-;                                                                                  
-;                                                                                  
+;
+;
+;
+;
+;   ;;;;       ;
+;    ;  ;                                                                    ;
+;    ;   ;   ;;;     ;;;;;   ;;; ;   ;;;;   ;; ;;   ;; ;;    ;;;;    ;;; ;  ;;;;;
+;    ;   ;     ;    ;    ;  ;   ;;  ;    ;   ;;  ;   ;;  ;  ;    ;  ;   ;;   ;
+;    ;   ;     ;     ;;;;   ;       ;    ;   ;   ;   ;   ;  ;;;;;;  ;        ;
+;    ;   ;     ;         ;  ;       ;    ;   ;   ;   ;   ;  ;       ;        ;
+;    ;  ;      ;    ;    ;  ;    ;  ;    ;   ;   ;   ;   ;  ;       ;    ;   ;   ;
+;   ;;;;     ;;;;;  ;;;;;    ;;;;    ;;;;   ;;; ;;; ;;; ;;;  ;;;;;   ;;;;     ;;;
+;
+;
+;
+;
 
 ;; JoinUniverse IWorld -> Bundle
 ;; remove that iworld from list of clients
@@ -479,22 +487,22 @@ The server is responsible for:
 (define (drop-player p iw)
   (broadcast-universe (play-remove p iw)))
 
-;                          
-;                          
-;                          
-;                          
-;     ;;                   
-;      ;                   
-;     ; ;   ;;  ;;  ;;  ;; 
-;     ; ;    ;   ;   ;  ;  
-;     ; ;    ;   ;    ;;   
-;     ;;;    ;   ;    ;;   
-;    ;   ;   ;  ;;   ;  ;  
-;   ;;; ;;;   ;; ;; ;;  ;; 
-;                          
-;                          
-;                          
-;                          
+;
+;
+;
+;
+;     ;;
+;      ;
+;     ; ;   ;;  ;;  ;;  ;;
+;     ; ;    ;   ;   ;  ;
+;     ; ;    ;   ;    ;;
+;     ;;;    ;   ;    ;;
+;    ;   ;   ;  ;;   ;  ;
+;   ;;; ;;;   ;; ;; ;;  ;;
+;
+;
+;
+;
 
 ;; Number -> Body
 ;; creates a random body, that does not touch the edge
@@ -511,7 +519,7 @@ The server is responsible for:
 ;; ServerState -> Bundle
 ;; makes a bundle that sends no messages and disconnects noone
 (define (empty-bundle s)
-  (make-bundle s empty empty))  
+  (make-bundle s empty empty))
 
 ;; IWorld Id -> IP
 ;; creates a player with that idnumber
