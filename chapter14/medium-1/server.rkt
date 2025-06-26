@@ -446,7 +446,8 @@ The server is responsible for:
 ;; PlayUniverse -> [Bundle PlayUniverse [Listof [Mail StateMessage]]]
 ;; bundle this universe, serialize it, broadcast it, and drop noone
 (define (broadcast-universe p)
-  (define mails (broadcast (get-iws p) (serialize-universe p)))
+  (define mails
+    (map (lambda (x) (make-mail (ip-iw x) (serialize-universe p (ip-id x)))) (play-players p)))
   (make-bundle p mails empty))
 
 ;; [Listof IWorlds] Message -> [Listof Mail]
@@ -456,8 +457,13 @@ The server is responsible for:
 
 ;; PlayUniverse -> (list s [Listof SerializedPlayer] [Listof SerializedFood])
 ;; prepairs a message for an update world/ServerState state
-(define (serialize-universe p)
-  (define serialized-players (map ip-player (play-players p)))
+(define (serialize-universe p id)
+  (define serialized-players
+    (map (lambda (x)
+           (player (player-id x)
+                   (player-body x)
+                   (if (string=? id (player-id x)) (player-waypoints x) empty)))
+         (map ip-player (play-players p))))
   (list SERIALIZE serialized-players (play-food p)))
 
 ;

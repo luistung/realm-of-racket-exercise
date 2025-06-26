@@ -54,4 +54,3 @@
 ;; launch server worlds for playtesting
 (define (serve-dinner)
   (launch-many-worlds (bon-appetit) (lets-eat "Matthias" LOCALHOST) (lets-eat "David" LOCALHOST)))
-
