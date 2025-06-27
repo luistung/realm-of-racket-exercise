@@ -40,7 +40,7 @@ The server is responsible for:
 (define START-TIME 0)
 (define WAIT-TIME 250)
 (define ADD-FOOD# 0)
-(define AI# 1)
+(define ai# 1)
 (define food-remaider 0)
 
 (define FOOD*PLAYERS 5)
@@ -132,7 +132,8 @@ The server is responsible for:
 ;
 ;
 
-(define (bon-appetit)
+(define (bon-appetit [ai-number 1])
+  (set! ai# ai-number)
   (universe JOIN0
             (on-new connect)
             (on-msg handle-goto-message)
@@ -193,7 +194,7 @@ The server is responsible for:
 ;; JoinUniverse -> Boolean
 ;; is it time to start?
 (define (keep-waiting? j)
-  (or (> PLAYER-LIMIT (length (join-clients j))) (> WAIT-TIME (join-time j))))
+  (or (> PLAYER-LIMIT (+ (length (join-clients j)) ai#)) (> WAIT-TIME (join-time j))))
 
 ;; JoinUniverse -> [Bundle JoinUniverse]
 (define (keep-waiting j)
@@ -212,7 +213,7 @@ The server is responsible for:
 (define (start-game j)
   (define clients (join-clients j))
   (define ais
-    (for/list ([i AI#])
+    (for/list ([i ai#])
       (create-ai-player)))
   (define cupcakes (bake-cupcakes (length clients)))
   (broadcast-universe (play clients cupcakes empty ais)))
@@ -243,8 +244,25 @@ The server is responsible for:
 ;; moves everything. eats. may end game
 (define (move-and-eat pu)
   (define nplayers (move-player* (play-players pu)))
-  (define nfood (feed-em-all nplayers (play-food pu)))
-  (progress nplayers nfood (play-spectators pu) (play-ais pu)))
+  (define naiplayers (move-player* (play-ais pu)))
+  (define nfood (feed-em-all (append nplayers naiplayers) (play-food pu)))
+  (define nnaiplayers (map (curryr change-wpts nfood) naiplayers))
+  (progress nplayers nfood (play-spectators pu) nnaiplayers))
+
+(define (change-wpts aiplayer nfood)
+  (define (do-change-wpts nfood aiplayer)
+    (define (fine-wpt nfood player)
+      (define bloc (body-loc (ip-body player)))
+      (define lines (map (lambda (f) (- (body-loc f) bloc)) nfood))
+      (define magnitudes (map magnitude lines))
+      (define line-magnitude (argmin cdr (map cons lines magnitudes)))
+      (define speed (/ BASE-SPEED (body-size (ip-body player))))
+      (+ bloc (* (/ (car line-magnitude) (cdr line-magnitude)) speed)))
+    (define new-wpt (fine-wpt nfood aiplayer))
+    (ip (ip-iw aiplayer) (ip-id aiplayer) (ip-body aiplayer) (list new-wpt)))
+  (cond
+    [(and (empty? (ip-waypoints aiplayer)) (pair? nfood)) (do-change-wpts nfood aiplayer)]
+    [else aiplayer]))
 
 ;; [Listof IP] -> [Listof IP]
 ;; moves all players
