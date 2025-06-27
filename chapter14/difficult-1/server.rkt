@@ -40,6 +40,7 @@ The server is responsible for:
 (define START-TIME 0)
 (define WAIT-TIME 250)
 (define ADD-FOOD# 0)
+(define AI# 1)
 (define food-remaider 0)
 
 (define FOOD*PLAYERS 5)
@@ -49,7 +50,7 @@ The server is responsible for:
 
 ;; Data Definitions
 (struct join (clients [time #:mutable]) #:transparent)
-(struct play (players food spectators) #:transparent #:mutable)
+(struct play (players food spectators ais) #:transparent #:mutable)
 
 ;; plus some update primitives:
 
@@ -61,14 +62,14 @@ The server is responsible for:
 (define (play-add-spectator pu new-s)
   (define players (play-players pu))
   (define spectators (play-spectators pu))
-  (play players (play-food pu) (cons new-s spectators)))
+  (play players (play-food pu) (cons new-s spectators) (play-ais pu)))
 
 ;; PlayUniverse IWorld -> PlayUniverse
 ;; removes player that uses iworld
 (define (play-remove p iw)
   (define players (play-players p))
   (define spectators (play-spectators p))
-  (play (rip iw players) (play-food p) (rip iw spectators)))
+  (play (rip iw players) (play-food p) (rip iw spectators) (play-ais p)))
 
 ;; JoinUniverse IWorld -> JoinUniverse
 ;; removes players and spectators that use iw from this world
@@ -210,8 +211,11 @@ The server is responsible for:
 ;; starts the game
 (define (start-game j)
   (define clients (join-clients j))
+  (define ais
+    (for/list ([i AI#])
+      (create-ai-player)))
   (define cupcakes (bake-cupcakes (length clients)))
-  (broadcast-universe (play clients cupcakes empty)))
+  (broadcast-universe (play clients cupcakes empty ais)))
 
 ;; Number -> [Listof Food]
 ;; creates the amount of food for that number of players
@@ -240,7 +244,7 @@ The server is responsible for:
 (define (move-and-eat pu)
   (define nplayers (move-player* (play-players pu)))
   (define nfood (feed-em-all nplayers (play-food pu)))
-  (progress nplayers nfood (play-spectators pu)))
+  (progress nplayers nfood (play-spectators pu) (play-ais pu)))
 
 ;; [Listof IP] -> [Listof IP]
 ;; moves all players
@@ -304,8 +308,8 @@ The server is responsible for:
 
 ;; [Listof Ip] [Listof Food] [Listof IP] -> Bundle
 ;; moves all objects. may end game
-(define (progress pls foods spectators)
-  (define p (play pls foods spectators))
+(define (progress pls foods spectators ais)
+  (define p (play pls foods spectators ais))
   (cond
     [(empty? foods) (end-game-broadcast p)]
     [else (broadcast-universe p)]))
@@ -314,7 +318,7 @@ The server is responsible for:
 ;; ends the game, and restarts it
 (define (end-game-broadcast p)
   (define iws (get-iws p))
-  (define msg (list SCORE (score (play-players p))))
+  (define msg (list SCORE (score (append (play-players p) (play-ais p)))))
   (define mls (broadcast iws msg))
   (make-bundle (remake-join p) mls empty))
 
@@ -447,7 +451,8 @@ The server is responsible for:
 ;; bundle this universe, serialize it, broadcast it, and drop noone
 (define (broadcast-universe p)
   (define mails
-    (map (lambda (x) (make-mail (ip-iw x) (serialize-universe p (ip-id x)))) (play-players p)))
+    (map (lambda (x) (make-mail (ip-iw x) (serialize-universe p (ip-id x))))
+         (append (play-players p) (play-spectators p))))
   (make-bundle p mails empty))
 
 ;; [Listof IWorlds] Message -> [Listof Mail]
@@ -463,7 +468,7 @@ The server is responsible for:
            (player (player-id x)
                    (player-body x)
                    (if (string=? id (player-id x)) (player-waypoints x) empty)))
-         (map ip-player (play-players p))))
+         (map ip-player (append (play-players p) (play-ais p)))))
   (list SERIALIZE serialized-players (play-food p)))
 
 ;
@@ -531,3 +536,7 @@ The server is responsible for:
 ;; creates a player with that idnumber
 (define (create-player iw n)
   (ip iw n (create-a-body PLAYER-SIZE) empty))
+
+(define (create-ai-player)
+  (define id (symbol->string (gensym "AI")))
+  (ip #f id (create-a-body PLAYER-SIZE) empty))
