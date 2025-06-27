@@ -447,7 +447,8 @@ The server is responsible for:
 ;; bundle this universe, serialize it, broadcast it, and drop noone
 (define (broadcast-universe p)
   (define mails
-    (map (lambda (x) (make-mail (ip-iw x) (serialize-universe p (ip-id x)))) (play-players p)))
+    (map (lambda (x) (make-mail (ip-iw x) (serialize-universe p (ip-id x))))
+         (append (play-players p) (play-spectators p))))
   (make-bundle p mails empty))
 
 ;; [Listof IWorlds] Message -> [Listof Mail]
